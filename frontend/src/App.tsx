@@ -164,25 +164,23 @@ function App() {
   }
 
   const formatLastUpdated = (dateString: string) => {
-    if (!dateString) return 'Never'
-    
-    // Parse the UTC timestamp - JavaScript Date constructor handles both ISO format and Z suffix
-    const date = new Date(dateString)
-    
-    // Check if the date is valid
-    if (isNaN(date.getTime())) return 'Invalid date'
-    
-    // Get current time in user's timezone
-    const now = new Date()
-    const diffMinutes = Math.floor((now.getTime() - date.getTime()) / (1000 * 60))
-    
-    // Handle edge cases
-    if (diffMinutes < 0) return 'Just now'
-    if (diffMinutes < 1) return 'Just now'
-    if (diffMinutes < 60) return `${diffMinutes} min ago`
-    if (diffMinutes < 1440) return `${Math.floor(diffMinutes / 60)} hours ago`
-    return `${Math.floor(diffMinutes / 1440)} days ago`
-  }
+  if (!dateString) return 'Never'
+  
+  const date = new Date(dateString)
+  if (isNaN(date.getTime())) return 'Invalid date'
+  
+  const now = new Date()
+  const nowUTC = new Date(now.getTime() + (now.getTimezoneOffset() * 60000))
+  
+  // Calculate difference between UTC times
+  const diffMinutes = Math.floor((nowUTC.getTime() - date.getTime()) / (1000 * 60))
+  
+  if (diffMinutes < 0) return 'Just now'
+  if (diffMinutes < 1) return 'Just now'
+  if (diffMinutes < 60) return `${diffMinutes} min ago`
+  if (diffMinutes < 1440) return `${Math.floor(diffMinutes / 60)} hours ago`
+  return `${Math.floor(diffMinutes / 1440)} days ago`
+}
 
   // Pagination component
   const Pagination = () => {
