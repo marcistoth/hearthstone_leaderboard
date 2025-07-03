@@ -8,4 +8,8 @@ export default defineConfig({
     react(),
     tailwindcss(),
   ],
+  base: '/hearthstone_leaderboard/',
+  build: {
+    outDir: 'dist',
+  },
 })
