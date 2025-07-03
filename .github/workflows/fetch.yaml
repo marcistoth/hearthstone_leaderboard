@@ -30,8 +30,7 @@ jobs:
         SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
         SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
       run: |
-        cd script
-        python fetch_script.py
+        python script/fetch_script.py
     
     - name: Log completion
       run: |
