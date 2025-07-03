@@ -36,97 +36,98 @@ function App() {
   const [hasActiveSearch, setHasActiveSearch] = useState(false)
 
   // Fetch players from Supabase
-  const fetchPlayers = async (page: number = 1) => {
-    setIsLoading(true)
-    try {
-      // Get latest timestamp
-      const { data: latestTimestamp } = await supabase
-        .from('players')
-        .select('scraped_at')
-        .eq('region', selectedRegion)
-        .eq('game_mode', selectedGameMode)
-        .order('scraped_at', { ascending: false })
-        .limit(1)
+const fetchPlayers = async (page: number = 1) => {
+  setIsLoading(true)
+  try {
+    // Get the most recent successful run_time from scraping_logs
+    const { data: latestRun } = await supabase
+      .from('scraping_logs')
+      .select('run_time')
+      .contains('regions_processed', [selectedRegion])
+      .contains('game_modes_processed', [selectedGameMode])
+      .eq('status', 'success')
+      .order('run_time', { ascending: false })
+      .limit(1)
 
-      if (!latestTimestamp || latestTimestamp.length === 0) {
-        setPlayers([])
-        setTotalPlayers(0)
-        setHighestRating(0)
-        setLastUpdated('')
-        setTotalPages(0)
-        return
-      }
-
-      const mostRecentTimestamp = latestTimestamp[0].scraped_at
-
-      // Build query
-      let query = supabase
-        .from('players')
-        .select('*')
-        .eq('region', selectedRegion)
-        .eq('game_mode', selectedGameMode)
-        .eq('scraped_at', mostRecentTimestamp)
-
-      // Apply search filters
-      if (searchRank) {
-        query = query.eq('rank', parseInt(searchRank))
-      }
-      if (searchName) {
-        query = query.ilike('account_id', `%${searchName}%`)
-      }
-
-      // Apply pagination only if no search
-      if (!searchRank && !searchName) {
-        const from = (page - 1) * pageSize
-        const to = from + pageSize - 1
-        query = query.range(from, to)
-        setHasActiveSearch(false)
-      } else {
-        setHasActiveSearch(true)
-      }
-
-      query = query.order('rank', { ascending: true })
-
-      const { data, error } = await query
-      if (error) throw error
-
-      setPlayers(data || [])
-
-      // Get total count
-      const { count: totalCount } = await supabase
-        .from('players')
-        .select('*', { count: 'exact', head: true })
-        .eq('region', selectedRegion)
-        .eq('game_mode', selectedGameMode)
-        .eq('scraped_at', mostRecentTimestamp)
-
-      // Get highest rating
-      const { data: maxRatingData } = await supabase
-        .from('players')
-        .select('rating')
-        .eq('region', selectedRegion)
-        .eq('game_mode', selectedGameMode)
-        .eq('scraped_at', mostRecentTimestamp)
-        .order('rating', { ascending: false })
-        .limit(1)
-
-      if (totalCount !== null) {
-        setTotalPlayers(totalCount)
-        setTotalPages(Math.ceil(totalCount / pageSize))
-      }
-
-      if (maxRatingData && maxRatingData.length > 0) {
-        setHighestRating(maxRatingData[0].rating)
-      }
-
-      setLastUpdated(mostRecentTimestamp)
-
-    } catch (error) {
-      console.error('Error fetching players:', error)
-    } finally {
-      setIsLoading(false)
+    if (!latestRun || latestRun.length === 0) {
+      setPlayers([])
+      setTotalPlayers(0)
+      setHighestRating(0)
+      setLastUpdated('')
+      setTotalPages(0)
+      return
     }
+
+    const mostRecentRunTime = latestRun[0].run_time
+
+    // Build query using the latest successful run_time
+    let query = supabase
+      .from('players')
+      .select('*')
+      .eq('region', selectedRegion)
+      .eq('game_mode', selectedGameMode)
+      .eq('scraped_at', mostRecentRunTime)
+
+    // Apply search filters
+    if (searchRank) {
+      query = query.eq('rank', parseInt(searchRank))
+    }
+    if (searchName) {
+      query = query.ilike('account_id', `%${searchName}%`)
+    }
+
+    // Apply pagination only if no search
+    if (!searchRank && !searchName) {
+      const from = (page - 1) * pageSize
+      const to = from + pageSize - 1
+      query = query.range(from, to)
+      setHasActiveSearch(false)
+    } else {
+      setHasActiveSearch(true)
+    }
+
+    query = query.order('rank', { ascending: true })
+
+    const { data, error } = await query
+    if (error) throw error
+
+    setPlayers(data || [])
+
+    // Get total count for pagination (only from the latest successful run)
+    const { count: totalCount } = await supabase
+      .from('players')
+      .select('*', { count: 'exact', head: true })
+      .eq('region', selectedRegion)
+      .eq('game_mode', selectedGameMode)
+      .eq('scraped_at', mostRecentRunTime)
+
+    // Get highest rating
+    const { data: maxRatingData } = await supabase
+      .from('players')
+      .select('rating')
+      .eq('region', selectedRegion)
+      .eq('game_mode', selectedGameMode)
+      .eq('scraped_at', mostRecentRunTime)
+      .order('rating', { ascending: false })
+      .limit(1)
+
+    if (totalCount !== null) {
+      setTotalPlayers(totalCount)
+      setTotalPages(Math.ceil(totalCount / pageSize))
+    }
+
+    if (maxRatingData && maxRatingData.length > 0) {
+      setHighestRating(maxRatingData[0].rating)
+    }
+
+    setLastUpdated(mostRecentRunTime)
+
+  } catch (error) {
+    console.error('Error fetching players:', error)
+  } finally {
+    setIsLoading(false)
   }
+}
 
   // Reset and fetch when region/game mode changes
   useEffect(() => {
@@ -164,23 +165,23 @@ function App() {
   }
 
   const formatLastUpdated = (dateString: string) => {
-  if (!dateString) return 'Never'
-  
-  const date = new Date(dateString)
-  if (isNaN(date.getTime())) return 'Invalid date'
-  
-  const now = new Date()
-  const nowUTC = new Date(now.getTime() + (now.getTimezoneOffset() * 60000))
-  
-  // Calculate difference between UTC times
-  const diffMinutes = Math.floor((nowUTC.getTime() - date.getTime()) / (1000 * 60))
-  
-  if (diffMinutes < 0) return 'Just now'
-  if (diffMinutes < 1) return 'Just now'
-  if (diffMinutes < 60) return `${diffMinutes} min ago`
-  if (diffMinutes < 1440) return `${Math.floor(diffMinutes / 60)} hours ago`
-  return `${Math.floor(diffMinutes / 1440)} days ago`
-}
+    if (!dateString) return 'Never'
+    
+    const date = new Date(dateString)
+    if (isNaN(date.getTime())) return 'Invalid date'
+    
+    const now = new Date()
+    const nowUTC = new Date(now.getTime() + (now.getTimezoneOffset() * 60000))
+    
+    // Calculate difference between UTC times
+    const diffMinutes = Math.floor((nowUTC.getTime() - date.getTime()) / (1000 * 60))
+    
+    if (diffMinutes < 0) return 'Just now'
+    if (diffMinutes < 1) return 'Just now'
+    if (diffMinutes < 60) return `${diffMinutes} min ago`
+    if (diffMinutes < 1440) return `${Math.floor(diffMinutes / 60)} hours ago`
+    return `${Math.floor(diffMinutes / 1440)} days ago`
+  }
 
   // Pagination component
   const Pagination = () => {
@@ -356,7 +357,7 @@ function App() {
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div className="bg-white rounded-xl shadow-lg p-6 border-l-4 border-blue-500">
-            <h3 className="text-lg font-semibold text-gray-700 mb-2">Total Players</h3>
+            <h3 className="text-lg font-semibent text-gray-700 mb-2">Total Players</h3>
             <p className="text-3xl font-bold text-blue-600">{totalPlayers.toLocaleString()}</p>
           </div>
           <div className="bg-white rounded-xl shadow-lg p-6 border-l-4 border-green-500">
