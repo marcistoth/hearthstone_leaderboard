@@ -26,12 +26,20 @@ function App() {
   const [totalPlayers, setTotalPlayers] = useState(0)
   const [highestRating, setHighestRating] = useState(0)
   const [lastUpdated, setLastUpdated] = useState<string>('')
+  
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize] = useState(25)
+  const [totalPages, setTotalPages] = useState(0)
+  
+  // Simple search state
+  const [hasActiveSearch, setHasActiveSearch] = useState(false)
 
   // Fetch players from Supabase
-  const fetchPlayers = async () => {
+  const fetchPlayers = async (page: number = 1) => {
     setIsLoading(true)
     try {
-      // First, get the most recent scraped_at timestamp for this region/game_mode
+      // Get latest timestamp
       const { data: latestTimestamp } = await supabase
         .from('players')
         .select('scraped_at')
@@ -45,41 +53,46 @@ function App() {
         setTotalPlayers(0)
         setHighestRating(0)
         setLastUpdated('')
+        setTotalPages(0)
         return
       }
 
       const mostRecentTimestamp = latestTimestamp[0].scraped_at
 
-      // Now fetch players with the most recent timestamp
+      // Build query
       let query = supabase
         .from('players')
         .select('*')
         .eq('region', selectedRegion)
         .eq('game_mode', selectedGameMode)
         .eq('scraped_at', mostRecentTimestamp)
-        .order('rank', { ascending: true })
 
-      // Apply filters
+      // Apply search filters
       if (searchRank) {
         query = query.eq('rank', parseInt(searchRank))
       }
-
       if (searchName) {
         query = query.ilike('account_id', `%${searchName}%`)
       }
 
-      // Limit results
+      // Apply pagination only if no search
       if (!searchRank && !searchName) {
-        query = query.limit(10)
+        const from = (page - 1) * pageSize
+        const to = from + pageSize - 1
+        query = query.range(from, to)
+        setHasActiveSearch(false)
+      } else {
+        setHasActiveSearch(true)
       }
 
-      const { data, error } = await query
+      query = query.order('rank', { ascending: true })
 
+      const { data, error } = await query
       if (error) throw error
 
       setPlayers(data || [])
 
-      // Get stats for the current selection (only from most recent timestamp)
+      // Get total count
       const { count: totalCount } = await supabase
         .from('players')
         .select('*', { count: 'exact', head: true })
@@ -87,6 +100,7 @@ function App() {
         .eq('game_mode', selectedGameMode)
         .eq('scraped_at', mostRecentTimestamp)
 
+      // Get highest rating
       const { data: maxRatingData } = await supabase
         .from('players')
         .select('rating')
@@ -98,6 +112,7 @@ function App() {
 
       if (totalCount !== null) {
         setTotalPlayers(totalCount)
+        setTotalPages(Math.ceil(totalCount / pageSize))
       }
 
       if (maxRatingData && maxRatingData.length > 0) {
@@ -113,19 +128,39 @@ function App() {
     }
   }
 
-  // Fetch data when filters change
+  // Reset and fetch when region/game mode changes
   useEffect(() => {
-    fetchPlayers()
+    setCurrentPage(1)
+    setSearchRank('')
+    setSearchName('')
+    setHasActiveSearch(false)
+    fetchPlayers(1)
   }, [selectedRegion, selectedGameMode])
 
+  // Fetch when page changes (only if no search active)
+  useEffect(() => {
+    if (!hasActiveSearch) {
+      fetchPlayers(currentPage)
+    }
+  }, [currentPage])
+
   const handleSearch = () => {
-    fetchPlayers()
+    setCurrentPage(1)
+    fetchPlayers(1)
   }
 
   const clearFilters = () => {
     setSearchRank('')
     setSearchName('')
-    fetchPlayers()
+    setCurrentPage(1)
+    setHasActiveSearch(false)
+    fetchPlayers(1)
+  }
+
+  const handlePageChange = (page: number) => {
+    if (hasActiveSearch) return
+    setCurrentPage(page)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   const formatLastUpdated = (dateString: string) => {
@@ -137,6 +172,79 @@ function App() {
     if (diffMinutes < 60) return `${diffMinutes} min ago`
     if (diffMinutes < 1440) return `${Math.floor(diffMinutes / 60)} hours ago`
     return `${Math.floor(diffMinutes / 1440)} days ago`
+  }
+
+  // Pagination component
+  const Pagination = () => {
+    if (totalPages <= 1 || hasActiveSearch) return null
+
+    const getPageNumbers = () => {
+      const delta = 2
+      const pages = []
+      const rangeStart = Math.max(1, currentPage - delta)
+      const rangeEnd = Math.min(totalPages, currentPage + delta)
+
+      if (rangeStart > 1) {
+        pages.push(1)
+        if (rangeStart > 2) pages.push('...')
+      }
+
+      for (let i = rangeStart; i <= rangeEnd; i++) {
+        pages.push(i)
+      }
+
+      if (rangeEnd < totalPages) {
+        if (rangeEnd < totalPages - 1) pages.push('...')
+        pages.push(totalPages)
+      }
+
+      return pages
+    }
+
+    return (
+      <div className="flex items-center justify-between px-6 py-4 bg-gray-50 border-b border-gray-200">
+        <div className="flex items-center text-sm text-gray-700">
+          <span>
+            Showing {((currentPage - 1) * pageSize) + 1} to {Math.min(currentPage * pageSize, totalPlayers)} of {totalPlayers.toLocaleString()} players
+          </span>
+        </div>
+        
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={() => handlePageChange(currentPage - 1)}
+            disabled={currentPage === 1}
+            className="px-3 py-1 text-sm bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Previous
+          </button>
+          
+          {getPageNumbers().map((page, index) => (
+            <button
+              key={index}
+              onClick={() => typeof page === 'number' && handlePageChange(page)}
+              disabled={page === '...'}
+              className={`px-3 py-1 text-sm rounded-md ${
+                page === currentPage
+                  ? 'bg-blue-600 text-white'
+                  : page === '...'
+                  ? 'bg-white text-gray-400 cursor-default'
+                  : 'bg-white border border-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              {page}
+            </button>
+          ))}
+          
+          <button
+            onClick={() => handlePageChange(currentPage + 1)}
+            disabled={currentPage === totalPages}
+            className="px-3 py-1 text-sm bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Next
+          </button>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -257,12 +365,14 @@ function App() {
         <div className="bg-white rounded-xl shadow-lg overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
             <h2 className="text-xl font-semibold text-gray-800">
-              {searchRank || searchName ? 'Search Results' : 'Top Players'}
+              {hasActiveSearch ? 'Search Results' : `Top Players - Page ${currentPage}`}
             </h2>
             <p className="text-sm text-gray-600 mt-1">
               {selectedRegion} - {selectedGameMode === 'battlegrounds' ? 'Battlegrounds' : 'Battlegrounds Duos'}
             </p>
           </div>
+          
+          {!isLoading && players.length > 0 && <Pagination />}
           
           {isLoading ? (
             <div className="flex justify-center items-center py-12">
