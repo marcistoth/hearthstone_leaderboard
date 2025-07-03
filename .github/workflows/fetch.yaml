@@ -1,0 +1,38 @@
+name: Fetch Hearthstone Leaderboard
+
+on:
+  schedule:
+    # Run every hour at minute 0
+    - cron: '0 * * * *'
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  fetch-leaderboard:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r script/requirements.txt
+    
+    - name: Run leaderboard fetch script
+      env:
+        SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+        SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      run: |
+        cd script
+        python fetch_script.py
+    
+    - name: Log completion
+      run: |
+        echo "Leaderboard fetch completed at $(date)"
