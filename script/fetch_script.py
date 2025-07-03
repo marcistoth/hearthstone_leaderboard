@@ -4,11 +4,11 @@ import requests
 import time
 
 def get_hour_aligned_timestamp():
-    """Get current timestamp aligned to the hour (minutes and seconds set to 0)"""
-    now = datetime.now()
+    """Get current UTC timestamp aligned to the hour (minutes and seconds set to 0)"""
+    now = datetime.utcnow()  # Use UTC instead of local time
     # Set minutes, seconds, and microseconds to 0
     aligned_time = now.replace(minute=0, second=0, microsecond=0)
-    return aligned_time.isoformat()
+    return aligned_time.isoformat() + 'Z'  # Add Z to indicate UTC
 
 def fetch_single_page(region="EU", leaderboard_id="battlegrounds", page=1):
     """Fetch a single page of leaderboard data from Hearthstone API"""
